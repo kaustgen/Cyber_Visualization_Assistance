@@ -25,6 +25,9 @@ pytest tests/ -m neo4j -v
 
 # Only LLM integration test (requires Ollama running)
 pytest tests/ -m integration -v
+
+# Coverage with report
+pytest tests/ --cov=src --cov-report=html
 ```
 
 ### Skip Slow Tests
