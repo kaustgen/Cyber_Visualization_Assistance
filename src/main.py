@@ -65,7 +65,8 @@ def main():
                             print(f"         └─ {vuln['cve_id']} (Score: {vuln['severity_score']})")
                     if svc.get('users'):
                         for user in svc['users']:
-                            print(f"         └─ User: {user['username']} ({user['permission_level']})")
+                            password_display = f" | Password: {user.get('password')}" if user.get('password') else ""
+                            print(f"         └─ User: {user['username']} ({user['permission_level']}){password_display}")
         
         if host['services']:
             print(f"\n  Direct Services ({len(host['services'])}):")
@@ -76,14 +77,17 @@ def main():
                     print(f"      Notes: {svc['notes']}")
                 if svc.get('users'):
                     for user in svc['users']:
-                        print(f"      └─ User: {user['username']} ({user['permission_level']})")
+                        password_display = f" | Password: {user.get('password')}" if user.get('password') else ""
+                        print(f"      └─ User: {user['username']} ({user['permission_level']}){password_display}")
         
         if host['users']:
             print(f"\n  Users ({len(host['users'])}):")
             for user in host['users']:
-                print(f"    - {user['username']} ({user['permission_level']})")
-                if user.get('has_access_to'):
-                    print(f"      Has Access: {', '.join(user['has_access_to'])}")
+                password_display = f" | Password: {user.get('password')}" if user.get('password') else ""
+                print(f"    - {user['username']} ({user['permission_level']}){password_display}")
+                # DEPRECATED: HAS_ACCESS relationship removed
+                # if user.get('has_access_to'):
+                #     print(f"      Has Access: {', '.join(user['has_access_to'])}")
         
         if host['nics']:
             print(f"\n  Network Interfaces ({len(host['nics'])}):")
@@ -124,6 +128,7 @@ def main():
         print("  3. Neo4j Python driver is installed: pip install neo4j")
         sys.exit(1)
     
+    #print(result)
     return result
 
 

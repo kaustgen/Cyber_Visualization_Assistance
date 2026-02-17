@@ -124,18 +124,19 @@ class TestNeo4jConnector:
         # Should create two different user nodes
         assert user1['source'] != user2['source']
     
-    def test_has_access_relationship(self, neo4j_connector, mock_parsed_data):
-        """Test HAS_ACCESS relationship is created"""
-        neo4j_connector.import_parsed_data(mock_parsed_data)
-        
-        # Query to verify relationship exists
-        with neo4j_connector.driver.session(database=neo4j_connector.database) as session:
-            result = session.run("""
-                MATCH (u:User {username: 'admin'})-[:HAS_ACCESS]->(s:Service {name: 'Apache'})
-                RETURN u, s
-            """)
-            records = list(result)
-            assert len(records) > 0
+    # DEPRECATED: HAS_ACCESS relationship removed from schema
+    # def test_has_access_relationship(self, neo4j_connector, mock_parsed_data):
+    #     """Test HAS_ACCESS relationship is created"""
+    #     neo4j_connector.import_parsed_data(mock_parsed_data)
+    #     
+    #     # Query to verify relationship exists
+    #     with neo4j_connector.driver.session(database=neo4j_connector.database) as session:
+    #         result = session.run("""
+    #             MATCH (u:User {username: 'admin'})-[:HAS_ACCESS]->(s:Service {name: 'Apache'})
+    #             RETURN u, s
+    #         """)
+    #         records = list(result)
+    #         assert len(records) > 0
     
     def test_port_runs_service_relationship(self, neo4j_connector):
         """Test RUNS_SERVICE relationship between Port and Service"""

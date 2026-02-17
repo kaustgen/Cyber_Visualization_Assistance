@@ -192,7 +192,7 @@ class Neo4jConnector:
                 return dict(record["s"])
             return {}
     
-    def create_user(self, username: str, source: str, permission_level: str = "Unknown") -> Dict:
+    def create_user(self, username: str, source: str, permission_level: str = "Unknown", password: str = "") -> Dict:
         """
         Create or update a User node.
         
@@ -200,6 +200,7 @@ class Neo4jConnector:
             username: Username
             source: Source (hostname or service name)
             permission_level: User's permission level
+            password: User's password if discovered
             
         Returns:
             Dictionary containing the created/updated user node
@@ -207,9 +208,10 @@ class Neo4jConnector:
         with self.driver.session(database=self.database) as session:
             result = session.run("""
                 MERGE (u:User {username: $username, source: $source})
-                SET u.permission_level = $permission_level
+                SET u.permission_level = $permission_level,
+                    u.password = $password
                 RETURN u
-            """, username=username, source=source, permission_level=permission_level)
+            """, username=username, source=source, permission_level=permission_level, password=password)
             
             record = result.single()
             if record:
@@ -234,23 +236,26 @@ class Neo4jConnector:
                 MERGE (s)-[:HAS_USER]->(u)
             """, service_name=service_name, host_name=host_name, username=username, source=source)
     
-    def link_user_access_to_service(self, username: str, source: str, service_name: str, host_name: str):
-        """Create HAS_ACCESS relationship between User and Service."""
-        with self.driver.session(database=self.database) as session:
-            session.run("""
-                MATCH (u:User {username: $username, source: $source})
-                MATCH (s:Service {name: $service_name, host: $host_name})
-                MERGE (u)-[:HAS_ACCESS]->(s)
-            """, username=username, source=source, service_name=service_name, host_name=host_name)
+    # DEPRECATED: HAS_ACCESS relationship removed from schema
+    # def link_user_access_to_service(self, username: str, source: str, service_name: str, host_name: str):
+    #     """Create HAS_ACCESS relationship between User and Service."""
+    #     with self.driver.session(database=self.database) as session:
+    #         session.run("""
+    #             MATCH (u:User {username: $username, source: $source})
+    #             MATCH (s:Service {name: $service_name, host: $host_name})
+    #             MERGE (u)-[:HAS_ACCESS]->(s)
+    #         """, username=username, source=source, service_name=service_name, host_name=host_name)
     
-    def create_nic(self, host_name: str, mac: str = "Unknown", ip: str = "Unknown") -> Dict:
+    def create_nic(self, host_name: str, ip: str = "Unknown", mac: str = "Unknown") -> Dict:
         """
         Create or update a NIC (Network Interface Card) node and link it to a Host via HAS_NIC.
+        IP is the primary key (often discovered first via netstat), MAC is an optional attribute.
+        Uses host as source for uniqueness when multiple NICs have same IP.
         
         Args:
-            host_name: Name of the host that has this NIC
-            mac: MAC address
-            ip: IP address
+            host_name: Name of the host that has this NIC (source for uniqueness)
+            ip: IP address (primary key - discovered via netstat/connections)
+            mac: MAC address (optional attribute - discovered later)
             
         Returns:
             Dictionary containing the created/updated NIC node
@@ -258,10 +263,11 @@ class Neo4jConnector:
         with self.driver.session(database=self.database) as session:
             result = session.run("""
                 MATCH (h:Host {name: $host_name})
-                MERGE (n:NIC {mac: $mac, ip: $ip, host: $host_name})
+                MERGE (n:NIC {ip: $ip})
+                SET n.mac = $mac
                 MERGE (h)-[:HAS_NIC]->(n)
                 RETURN n
-            """, host_name=host_name, mac=mac, ip=ip)
+            """, host_name=host_name, ip=ip, mac=mac)
             
             record = result.single()
             if record:
@@ -271,6 +277,7 @@ class Neo4jConnector:
     def create_nic_connection(self, source_ip: str, target_ip: str) -> bool:
         """
         Create a CONNECTS_TO relationship between two NICs.
+        Creates the target NIC if it doesn't exist yet (for network enumeration visibility).
         
         Args:
             source_ip: IP address of the source NIC
@@ -282,7 +289,8 @@ class Neo4jConnector:
         with self.driver.session(database=self.database) as session:
             result = session.run("""
                 MATCH (n1:NIC {ip: $source_ip})
-                MATCH (n2:NIC {ip: $target_ip})
+                MERGE (n2:NIC {ip: $target_ip})
+                ON CREATE SET n2.mac = "Unknown", n2.host = "Unknown"
                 MERGE (n1)-[:CONNECTS_TO]->(n2)
                 RETURN n1, n2
             """, source_ip=source_ip, target_ip=target_ip)
@@ -373,7 +381,8 @@ class Neo4jConnector:
                         self.create_user(
                             username=username,
                             source=source,
-                            permission_level=user_data.get("permission_level", "Unknown")
+                            permission_level=user_data.get("permission_level", "Unknown"),
+                            password=user_data.get("password", "")
                         )
                         self.link_user_to_service(username, source, service_name, host_name)
                         stats["users"] += 1
@@ -409,7 +418,8 @@ class Neo4jConnector:
                     self.create_user(
                         username=username,
                         source=source,
-                        permission_level=user_data.get("permission_level", "Unknown")
+                        permission_level=user_data.get("permission_level", "Unknown"),
+                        password=user_data.get("password", "")
                     )
                     self.link_user_to_service(username, source, service_name, host_name)
                     stats["users"] += 1
@@ -421,21 +431,23 @@ class Neo4jConnector:
                 self.create_user(
                     username=username,
                     source=source,
-                    permission_level=user_data.get("permission_level", "Unknown")
+                    permission_level=user_data.get("permission_level", "Unknown"),
+                    password=user_data.get("password", "")
                 )
                 self.link_user_to_host(username, source, host_name)
                 stats["users"] += 1
                 
+                # DEPRECATED: HAS_ACCESS relationship removed
                 # Create HAS_ACCESS relationships
-                for service_name in user_data.get("has_access_to", []):
-                    self.link_user_access_to_service(username, source, service_name, host_name)
+                # for service_name in user_data.get("has_access_to", []):
+                #     self.link_user_access_to_service(username, source, service_name, host_name)
             
             # Create NIC nodes
             for nic in host_data.get("nics", []):
                 self.create_nic(
                     host_name=host_name,
-                    mac=nic.get("mac", "Unknown"),
-                    ip=nic.get("ip", "Unknown")
+                    ip=nic.get("ip", "Unknown"),
+                    mac=nic.get("mac", "Unknown")
                 )
                 stats["nics"] += 1
         

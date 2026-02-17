@@ -57,7 +57,6 @@ Initial reconnaissance shows this is the main web server. Apache is running with
 
 ### Users
 - Administrator (Full control)
-  - Has Access: MySQL
 - backup_svc (Backup service account with elevated privileges)
 
 ### Notes

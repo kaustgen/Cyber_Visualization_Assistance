@@ -28,8 +28,7 @@ Use proper Neo4j relationship syntax with `HAS_*`, `RUNS_SERVICE`, and connectio
       -[:HAS_VULNERABILITY]-> (Vulnerability)
       -[:HAS_USER]-> (User {username: string, permission_level: string, source: string})
   -[:RUNS_SERVICE]-> (Service)  // Direct host services (no port)
-  -[:HAS_USER]-> (User {username: string, permission_level: string, source: string})
-    -[:HAS_ACCESS]-> (Service)
+  -[:HAS_USER]-> (User {username: string, password: string, permission_level: string, source: string})
   -[:HAS_NIC]-> (NIC {ip: string, mac: string})
     -[:CONNECTS_TO]-> (NIC)
 ```
@@ -166,12 +165,13 @@ When modifying Neo4j operations, ensure:
 /venv         - Virtual environment (never commit)
 requirements.txt - Python dependencies (update every session!)
 AGENTS.md - Key agent instructions
+template.md   - Our template given to users, this is what we should base all future templates and tests off of
 
 **NEVER infer relationships or data** - only extract what is explicitly in markdown
 - Don't create duplicate User nodes - use source attribute to differentiate
 - Don't create duplicate Vulnerability nodes - CVEs are shared across hosts/services
 - Don't assume Service-User relationships - only create if nested in markdown
-- Don't use generic relationship names - use schema patterns: `HAS_*`, `RUNS_SERVICE`, `HAS_ACCESS`, `CONNECTS_TO`
+- Don't use generic relationship names - use schema patterns: `HAS_*`
 
 ## Common Pitfalls to Avoid
 - Don't create relationships between Application, User, Port nodes directly

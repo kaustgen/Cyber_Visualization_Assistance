@@ -23,6 +23,7 @@ class Vulnerability:
 class User:
     username: str
     permission_level: str = "Unknown"
+    password: str = ""  # Password if discovered
     source: str = ""  # hostname or service name
     has_access_to: List[str] = None  # List of service names
     
@@ -59,8 +60,8 @@ class Port:
 
 @dataclass
 class NIC:
-    mac: str = "Unknown"
-    ip: str = "Unknown"
+    ip: str = "Unknown"  # Primary key - discovered first via netstat/connections
+    mac: str = "Unknown"  # Optional attribute - discovered later
     connects_to: List[str] = None
     
     def __post_init__(self):
@@ -124,30 +125,100 @@ class LLMParser:
         
         return self.parse_markdown(content)
     
+    def _count_hosts_in_markdown(self, content: str) -> int:
+        """Count the number of hosts in the markdown by looking for host headers."""
+        import re
+        # Match patterns like "## Host: hostname" or "##Host:hostname"
+        host_pattern = r'\s*Host:\s*\S+'
+        matches = re.findall(host_pattern, content, re.MULTILINE | re.IGNORECASE)
+        return len(matches)
+    
+    def _validate_parsed_data(self, data: Dict, expected_hosts: int) -> tuple[bool, str]:
+        """Validate parsed data for common errors.
+        
+        Returns:
+            (is_valid, error_message)
+        """
+        if "hosts" not in data:
+            return False, "Missing 'hosts' key in parsed data"
+        
+        hosts = data.get("hosts", [])
+        
+        # Check host count
+        if len(hosts) != expected_hosts:
+            return False, f"Expected {expected_hosts} hosts, got {len(hosts)}"
+        
+        # Validate each host
+        for idx, host in enumerate(hosts):
+            host_name = host.get("name", f"Host #{idx}")
+            
+            # Check for invalid port numbers
+            for port in host.get("ports", []):
+                port_num = port.get("number", 0)
+                if port_num == 0:
+                    return False, f"Host '{host_name}' has invalid port number 0"
+                if port_num < 1 or port_num > 65535:
+                    return False, f"Host '{host_name}' has invalid port {port_num}"
+            
+            # Warn if no NICs (every host should have network connectivity)
+            if not host.get("nics"):
+                print(f"WARNING: Host '{host_name}' has no NICs - every host should have network connectivity")
+        
+        return True, ""
+    
     def parse_markdown(self, content: str) -> Dict:
         """
-        Parse markdown content and extract Neo4j node structure.
+        Parse markdown content using the LLM.
+        Includes validation and retry logic for consistency.
         
         Args:
-            content: Markdown content string
+            content: Markdown content to parse
             
         Returns:
-            Dictionary containing extracted hosts and their relationships
+            Dictionary containing parsed host data
         """
-        prompt = self._build_extraction_prompt(content)
+        expected_hosts = self._count_hosts_in_markdown(content)
+        print(f"Expected to parse {expected_hosts} host(s) from markdown")
         
-        try:
-            response = self._call_ollama(prompt)
-            parsed_data = self._extract_json_from_response(response)
-            validated_data = self._validate_and_structure(parsed_data)
-            return validated_data
-        except Exception as e:
-            print(f"Error parsing markdown: {e}")
-            return {"hosts": []}
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                prompt = self._build_extraction_prompt(content)
+                response_text = self._call_ollama(prompt)
+                parsed_data = self._extract_json_from_response(response_text)
+                data = self._validate_and_structure(parsed_data)
+                
+                # Validate the parsed data
+                is_valid, error_msg = self._validate_parsed_data(data, expected_hosts)
+                
+                if is_valid:
+                    print(f"✓ Validation passed on attempt {attempt + 1}")
+                    return data
+                else:
+                    print(f"✗ Validation failed on attempt {attempt + 1}: {error_msg}")
+                    if attempt < max_retries - 1:
+                        print(f"  Retrying...")
+                        continue
+                    else:
+                        print(f"  Max retries reached. Returning partial data.")
+                        return data
+            
+            except Exception as e:
+                print(f"Error on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    print(f"  Retrying...")
+                    continue
+                else:
+                    print(f"Error parsing markdown: {e}")
+                    return {"hosts": []}
     
     def _build_extraction_prompt(self, content: str) -> str:
         """Build the prompt for the LLM to extract structured data."""
+        expected_hosts = self._count_hosts_in_markdown(content)
         return f"""You are a penetration testing note parser. Extract structured information from the markdown content below.
+
+**CRITICAL**: This markdown contains {expected_hosts} host(s). You MUST extract ALL {expected_hosts} hosts.
+Look for sections that start with "## Host:" or similar patterns.
 
 Extract the following information about hosts/machines on the network:
 - Host/Machine names
@@ -156,9 +227,13 @@ Extract the following information about hosts/machines on the network:
 - Open Ports (with services running on them)
 - Services (can run on ports OR directly on host)
 - Service-level Vulnerabilities
-- Users (at host level OR service level)
-- User access relationships (Has Access to services)
+- Users (at host level OR service level) with passwords if discovered
 - Network Interface Cards (with MAC addresses, IP addresses, and connections to other IPs)
+
+**CRITICAL**: EVERY host MUST have at least one NIC node with an IP address or MAC address. 
+In penetration testing, if we accessed the device, it has network connectivity. If no NIC information 
+is explicitly provided in the markdown, you MUST still create a NIC entry (IP can be marked as "Unknown" 
+if truly not present, but try to infer from context like "IP Address:" fields).
 
 CRITICAL PARSING RULES:
 1. NEVER infer or make up any data - only extract what is explicitly mentioned
@@ -166,7 +241,7 @@ CRITICAL PARSING RULES:
 3. Users nested under Services belong to that service (source="ServiceName")
 4. Users at Host level belong to host (source="hostname")
 5. Parse vulnerability attributes: severity_score (float), exploitable (bool), patched (bool) from markdown
-6. "Has Access: ServiceName" means create has_access_to relationship
+6. EVERY host must have at least one NIC - look for IP/MAC in markdown or create with "Unknown" IP
 
 Return ONLY a valid JSON object in this exact format:
 {{
@@ -206,6 +281,7 @@ Return ONLY a valid JSON object in this exact format:
                 {{
                   "username": "service_user",
                   "permission_level": "admin",
+                  "password": "",
                   "source": "Apache"
                 }}
               ]
@@ -232,14 +308,14 @@ Return ONLY a valid JSON object in this exact format:
         {{
           "username": "admin",
           "permission_level": "Administrator",
-          "source": "hostname",
-          "has_access_to": ["Apache", "MySQL"]
+          "password": "",
+          "source": "hostname"
         }}
       ],
       "nics": [
         {{
-          "mac": "00:00:00:00:00:00",
           "ip": "192.168.1.1",
+          "mac": "00:00:00:00:00:00",
           "connects_to": ["192.168.1.2"]
         }}
       ]
@@ -267,7 +343,12 @@ JSON output:"""
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "format": "json"
+            "format": "json",
+            "options": {
+                "temperature": 0.0,  # Deterministic output
+                "top_p": 0.9,
+                "num_predict": 4096  # Allow longer outputs
+            }
         }
         
         response = requests.post(url, json=payload, timeout=120)
@@ -355,6 +436,7 @@ JSON output:"""
                         svc_users.append(User(
                             username=user_data.get("username", "Unknown"),
                             permission_level=user_data.get("permission_level", "Unknown"),
+                            password=user_data.get("password", ""),
                             source=user_data.get("source", svc_data.get("name", "Unknown"))
                         ))
                     
@@ -393,6 +475,7 @@ JSON output:"""
                     svc_users.append(User(
                         username=user_data.get("username", "Unknown"),
                         permission_level=user_data.get("permission_level", "Unknown"),
+                        password=user_data.get("password", ""),
                         source=user_data.get("source", svc_data.get("name", "Unknown"))
                     ))
                 
@@ -410,8 +493,9 @@ JSON output:"""
                 host_users.append(User(
                     username=user_data.get("username", "Unknown"),
                     permission_level=user_data.get("permission_level", "Unknown"),
-                    source=user_data.get("source", host_name),
-                    has_access_to=user_data.get("has_access_to", [])
+                    password=user_data.get("password", ""),
+                    source=user_data.get("source", host_name)
+                    # has_access_to=user_data.get("has_access_to", [])  # DEPRECATED
                 ))
             
             # Parse NICs
