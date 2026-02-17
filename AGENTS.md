@@ -84,7 +84,7 @@ pytest --cov=src tests/
   NEO4J_USERNAME=neo4j
   NEO4J_PASSWORD=your_password 
 
-#### Services, Users, Ports, NICs, Vulnerabilities Clarifications:
+#### Services, Users, Ports, NICs, and Vulnerabilities Clarifications:
 - Extract attributes without inference (OS, CVEs, permission levels, service versions, MAC/IP)
 - Parse nested structures: Services under Ports, Users under Services, Vulnerabilities under multiple levels
 - Service naming: "Port 443 - HTTPS (Apache 2.4.41)" → Service name="Apache", version="2.4.41", notes="Running over HTTPS"
@@ -92,7 +92,7 @@ pytest --cov=src tests/
 - Vulnerability attributes: Parse severity_score from markdown if present, default 0.0
   LLM_MODEL=llama3
   LLM_OLLAMA_URL=http://localhost:11434
-  ```
+
 ## Code Patterns
 
 ### Local LLM Integration
