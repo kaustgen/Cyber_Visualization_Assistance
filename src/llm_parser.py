@@ -36,6 +36,11 @@ class Port:
 class NIC:
     mac: str = "Unknown"
     ip: str = "Unknown"
+    connects_to: List[str] = None
+    
+    def __post_init__(self):
+        if self.connects_to is None:
+            self.connects_to = []
 
 
 @dataclass
@@ -125,7 +130,7 @@ Extract the following information about hosts/machines on the network:
 - Applications running on each host (with their CVEs if mentioned)
 - Users on each host (with their permission levels)
 - Open ports (with their services)
-- Network Interface Cards (with MAC addresses and IP addresses)
+- Network Interface Cards (with MAC addresses, IP addresses, and connections to other IPs)
 
 CRITICAL: Only extract information that is explicitly mentioned in the notes. Do not infer or make up any data.
 
@@ -157,7 +162,8 @@ Return ONLY a valid JSON object in this exact format:
       "nics": [
         {{
           "mac": "00:00:00:00:00:00",
-          "ip": "192.168.1.1"
+          "ip": "192.168.1.1",
+          "connects_to": ["192.168.1.2", "192.168.1.3"]
         }}
       ]
     }}
@@ -264,7 +270,8 @@ JSON output:"""
             for nic in host_data.get("nics", []):
                 nics.append(NIC(
                     mac=nic.get("mac", "Unknown"),
-                    ip=nic.get("ip", "Unknown")
+                    ip=nic.get("ip", "Unknown"),
+                    connects_to=nic.get("connects_to", [])
                 ))
             
             # Create host

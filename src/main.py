@@ -61,6 +61,7 @@ def main():
             print(f"\n  Network Interfaces ({len(host['nics'])}):")
             for nic in host['nics']:
                 print(f"    - IP: {nic['ip']} | MAC: {nic['mac']}")
+                print(f"      Connects to: {', '.join(nic['connects_to']) if nic['connects_to'] else 'None'}")
     
     print(f"\n{'=' * 60}")
     print("Parsing complete!")

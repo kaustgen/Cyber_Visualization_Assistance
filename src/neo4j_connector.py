@@ -157,7 +157,7 @@ class Neo4jConnector:
                 return dict(record["p"])
             return {}
     
-    def create_nic(self, host_name: str, mac: str = "Unknown", ip: str = "Unknown") -> Dict:
+    def create_nic(self, host_name: str, mac: str = "Unknown", ip: str = "Unknown", connects_to: List[str] = None) -> Dict:
         """
         Create or update a NIC (Network Interface Card) node and link it to a Host via HAS_NIC.
         
@@ -165,22 +165,48 @@ class Neo4jConnector:
             host_name: Name of the host that has this NIC
             mac: MAC address
             ip: IP address
+            connects_to: List of IP addresses this NIC connects to
             
         Returns:
             Dictionary containing the created/updated NIC node
         """
+        if connects_to is None:
+            connects_to = []
+        
         with self.driver.session(database=self.database) as session:
             result = session.run("""
                 MATCH (h:Host {name: $host_name})
                 MERGE (n:NIC {mac: $mac, ip: $ip, host: $host_name})
+                SET n.connects_to = $connects_to
                 MERGE (h)-[:HAS_NIC]->(n)
                 RETURN n
-            """, host_name=host_name, mac=mac, ip=ip)
+            """, host_name=host_name, mac=mac, ip=ip, connects_to=connects_to)
             
             record = result.single()
             if record:
                 return dict(record["n"])
             return {}
+    
+    def create_nic_connection(self, source_ip: str, target_ip: str) -> bool:
+        """
+        Create a CONNECTS_TO relationship between two NICs.
+        
+        Args:
+            source_ip: IP address of the source NIC
+            target_ip: IP address of the target NIC
+            
+        Returns:
+            True if connection was created, False otherwise
+        """
+        with self.driver.session(database=self.database) as session:
+            result = session.run("""
+                MATCH (n1:NIC {ip: $source_ip})
+                MATCH (n2:NIC {ip: $target_ip})
+                MERGE (n1)-[:CONNECTS_TO]->(n2)
+                RETURN n1, n2
+            """, source_ip=source_ip, target_ip=target_ip)
+            
+            return result.single() is not None
     
     def import_parsed_data(self, parsed_data: Dict) -> Dict:
         """
@@ -243,9 +269,18 @@ class Neo4jConnector:
                 self.create_nic(
                     host_name=host_name,
                     mac=nic.get("mac", "Unknown"),
-                    ip=nic.get("ip", "Unknown")
+                    ip=nic.get("ip", "Unknown"),
+                    connects_to=nic.get("connects_to", [])
                 )
                 stats["nics"] += 1
+        
+        # Create CONNECTS_TO relationships between NICs
+        for host_data in parsed_data.get("hosts", []):
+            for nic in host_data.get("nics", []):
+                source_ip = nic.get("ip", "Unknown")
+                for target_ip in nic.get("connects_to", []):
+                    if source_ip != "Unknown" and target_ip:
+                        self.create_nic_connection(source_ip, target_ip)
         
         return stats
     

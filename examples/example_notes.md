@@ -31,7 +31,8 @@ Initial reconnaissance shows this is the main web server. Apache is running with
 
 ## Host: database-server-01
 
-**IP Address:** 192.168.1.101  
+**IP Address:** 192.168.1.101
+  **Connects To:** 192.168.1.100 
 **MAC Address:** 00:0a:95:9d:68:17  
 **Operating System:** Windows Server 2019
 
