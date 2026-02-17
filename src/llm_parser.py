@@ -323,9 +323,10 @@ JSON output:"""
             # Parse host vulnerabilities
             host_vulns = []
             for vuln in host_data.get("vulnerabilities", []):
+                severity = vuln.get("severity_score")
                 host_vulns.append(Vulnerability(
                     cve_id=vuln.get("cve_id", "Unknown"),
-                    severity_score=float(vuln.get("severity_score", 0.0)),
+                    severity_score=float(severity) if severity is not None else 0.0,
                     exploitable=bool(vuln.get("exploitable", False)),
                     patched=bool(vuln.get("patched", False)),
                     notes=vuln.get("notes", "")
@@ -339,9 +340,10 @@ JSON output:"""
                     # Parse service vulnerabilities
                     svc_vulns = []
                     for vuln in svc_data.get("vulnerabilities", []):
+                        severity = vuln.get("severity_score")
                         svc_vulns.append(Vulnerability(
                             cve_id=vuln.get("cve_id", "Unknown"),
-                            severity_score=float(vuln.get("severity_score", 0.0)),
+                            severity_score=float(severity) if severity is not None else 0.0,
                             exploitable=bool(vuln.get("exploitable", False)),
                             patched=bool(vuln.get("patched", False)),
                             notes=vuln.get("notes", "")
@@ -376,9 +378,10 @@ JSON output:"""
                 # Parse service vulnerabilities
                 svc_vulns = []
                 for vuln in svc_data.get("vulnerabilities", []):
+                    severity = vuln.get("severity_score")
                     svc_vulns.append(Vulnerability(
                         cve_id=vuln.get("cve_id", "Unknown"),
-                        severity_score=float(vuln.get("severity_score", 0.0)),
+                        severity_score=float(severity) if severity is not None else 0.0,
                         exploitable=bool(vuln.get("exploitable", False)),
                         patched=bool(vuln.get("patched", False)),
                         notes=vuln.get("notes", "")

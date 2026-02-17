@@ -1,7 +1,15 @@
 certifi==2026.1.4
 charset-normalizer==3.4.4
+colorama==0.4.6
+coverage==7.13.4
 idna==3.11
+iniconfig==2.3.0
 neo4j==6.1.0
+packaging==26.0
+pluggy==1.6.0
+Pygments==2.19.2
+pytest==9.0.2
+pytest-cov==7.0.0
 python-dotenv==1.2.1
 pytz==2025.2
 requests==2.32.5
