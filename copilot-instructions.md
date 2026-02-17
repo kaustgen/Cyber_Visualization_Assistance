@@ -17,23 +17,31 @@ A local Neo4j-powered penetration testing note visualization system. Ingests mar
 - **environment**: Python 3 with env
 
 ### Neo4j Graph Schema
-Use proper Neo4j relationship syntax with `HAS_*` pattern:
+Use proper Neo4j relationship syntax with `HAS_*`, `RUNS_SERVICE`, and connection patterns:
 
 **Node Hierarchy:**
 ```cypher
-(Host {os: string, cves: [string]})
-  -[:HAS_APPLICATION]-> (Application {cves: [string]})
-  -[:HAS_USER]-> (User {permission_level: string})
-  -[:HAS_PORT]-> (Port {service: string})
-  -[:HAS_NIC]-> (NIC {mac: string, ip: string})
-    -[:CONNECTS_TO]-> (NIC) // Network connections between hosts
+(Host {name: string, os: string, notes: string})
+  -[:HAS_VULNERABILITY]-> (Vulnerability {cve_id: string, severity_score: float, exploitable: bool, patched: bool, notes: string})
+  -[:HAS_PORT]-> (Port {number: int, protocol: string})
+    -[:RUNS_SERVICE]-> (Service {name: string, version: string, notes: string})
+      -[:HAS_VULNERABILITY]-> (Vulnerability)
+      -[:HAS_USER]-> (User {username: string, permission_level: string, source: string})
+  -[:RUNS_SERVICE]-> (Service)  // Direct host services (no port)
+  -[:HAS_USER]-> (User {username: string, permission_level: string, source: string})
+    -[:HAS_ACCESS]-> (Service)
+  -[:HAS_NIC]-> (NIC {ip: string, mac: string})
+    -[:CONNECTS_TO]-> (NIC)
 ```
 
 **Key Constraints:**
 - Host nodes are top-level entities (machines/devices on network)
-- All other nodes connect TO hosts, not between each other (except NIC-to-NIC)
-- Relationships follow pattern: `HAS_APPLICATION`, `HAS_USER`, `HAS_PORT`, `HAS_NIC`
-- NIC-to-NIC uses `CONNECTS_TO` for network topology
+- Vulnerabilities are shared nodes - multiple hosts/services can link to same CVE
+- Services can run on Ports or directly on Hosts
+- Users are uniquely identified by username + source (e.g., "web-server-01" or "MySQL")
+- User source attribute prevents duplication across hosts and services
+- Relationships: `HAS_VULNERABILITY`, `HAS_USER`, `HAS_PORT`, `HAS_NIC`, `RUNS_SERVICE`, `HAS_ACCESS`, `CONNECTS_TO`
+- **NEVER infer relationships** - only create what is explicitly in markdown
 
 ## Development Workflows
 
@@ -74,8 +82,14 @@ pytest --cov=src tests/
   ```
   NEO4J_URL=bolt://localhost:7687
   NEO4J_USERNAME=neo4j
-  NEO4J_PASSWORD=your_password
-  NEO4J_DATABASE=neo4j
+  NEO4J_PASSWORD=your_password 
+
+#### Services, Users, Ports, NICs, Vulnerabilities Clarifications:
+- Extract attributes without inference (OS, CVEs, permission levels, service versions, MAC/IP)
+- Parse nested structures: Services under Ports, Users under Services, Vulnerabilities under multiple levels
+- Service naming: "Port 443 - HTTPS (Apache 2.4.41)" → Service name="Apache", version="2.4.41", notes="Running over HTTPS"
+- User source tracking: Host-level users get source="hostname", Service-level users get source="ServiceName"
+- Vulnerability attributes: Parse severity_score from markdown if present, default 0.0
   LLM_MODEL=llama3
   LLM_OLLAMA_URL=http://localhost:11434
   ```
@@ -151,8 +165,13 @@ When modifying Neo4j operations, ensure:
 /tests        - pytest test suite
 /venv         - Virtual environment (never commit)
 requirements.txt - Python dependencies (update every session!)
-AGENTS.md     - Complete project specification
-```
+copilot-instructions.md - Key agent instructions
+
+**NEVER infer relationships or data** - only extract what is explicitly in markdown
+- Don't create duplicate User nodes - use source attribute to differentiate
+- Don't create duplicate Vulnerability nodes - CVEs are shared across hosts/services
+- Don't assume Service-User relationships - only create if nested in markdown
+- Don't use generic relationship names - use schema patterns: `HAS_*`, `RUNS_SERVICE`, `HAS_ACCESS`, `CONNECTS_TO`
 
 ## Common Pitfalls to Avoid
 - Don't create relationships between Application, User, Port nodes directly

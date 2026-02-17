@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 class Neo4jConnector:
     """
     Manages connections to Neo4j and provides methods to create/update/delete nodes
-    following the HAS_* relationship pattern.
+    following the refined schema with HAS_*, RUNS_SERVICE, HAS_ACCESS, and CONNECTS_TO relationships.
     """
     
     def __init__(self, uri: str, username: str, password: str, database: str = "neo4j"):
@@ -49,96 +49,88 @@ class Neo4jConnector:
             session.run("MATCH (n) DETACH DELETE n")
             print("Database cleared.")
     
-    def create_host(self, name: str, os: str = "Unknown", cves: List[str] = None) -> Dict:
+    def create_host(self, name: str, os: str = "Unknown", notes: str = "") -> Dict:
         """
         Create or update a Host node.
         
         Args:
             name: Host name (unique identifier)
             os: Operating system
-            cves: List of CVE identifiers
+            notes: Host notes
             
         Returns:
             Dictionary containing the created/updated host node
         """
-        if cves is None:
-            cves = []
-        
         with self.driver.session(database=self.database) as session:
             result = session.run("""
                 MERGE (h:Host {name: $name})
-                SET h.os = $os, h.cves = $cves
+                SET h.os = $os, h.notes = $notes
                 RETURN h
-            """, name=name, os=os, cves=cves)
+            """, name=name, os=os, notes=notes)
             
             record = result.single()
             if record:
                 return dict(record["h"])
             return {}
     
-    def create_application(self, host_name: str, app_name: str, cves: List[str] = None) -> Dict:
+    def create_vulnerability(self, cve_id: str, severity_score: float = 0.0, 
+                           exploitable: bool = False, patched: bool = False, 
+                           notes: str = "") -> Dict:
         """
-        Create or update an Application node and link it to a Host via HAS_APPLICATION.
+        Create or update a Vulnerability node (shared across hosts/services).
         
         Args:
-            host_name: Name of the host that has this application
-            app_name: Application name
-            cves: List of CVE identifiers for the application
+            cve_id: CVE identifier (unique)
+            severity_score: CVSS score
+            exploitable: Whether exploitable
+            patched: Whether patched
+            notes: Vulnerability notes
             
         Returns:
-            Dictionary containing the created/updated application node
-        """
-        if cves is None:
-            cves = []
-        
-        with self.driver.session(database=self.database) as session:
-            result = session.run("""
-                MATCH (h:Host {name: $host_name})
-                MERGE (a:Application {name: $app_name, host: $host_name})
-                SET a.cves = $cves
-                MERGE (h)-[:HAS_APPLICATION]->(a)
-                RETURN a
-            """, host_name=host_name, app_name=app_name, cves=cves)
-            
-            record = result.single()
-            if record:
-                return dict(record["a"])
-            return {}
-    
-    def create_user(self, host_name: str, username: str, permission_level: str = "Unknown") -> Dict:
-        """
-        Create or update a User node and link it to a Host via HAS_USER.
-        
-        Args:
-            host_name: Name of the host that has this user
-            username: Username
-            permission_level: User's permission level (e.g., admin, user, guest)
-            
-        Returns:
-            Dictionary containing the created/updated user node
+            Dictionary containing the created/updated vulnerability node
         """
         with self.driver.session(database=self.database) as session:
             result = session.run("""
-                MATCH (h:Host {name: $host_name})
-                MERGE (u:User {username: $username, host: $host_name})
-                SET u.permission_level = $permission_level
-                MERGE (h)-[:HAS_USER]->(u)
-                RETURN u
-            """, host_name=host_name, username=username, permission_level=permission_level)
+                MERGE (v:Vulnerability {cve_id: $cve_id})
+                SET v.severity_score = $severity_score, 
+                    v.exploitable = $exploitable,
+                    v.patched = $patched,
+                    v.notes = $notes
+                RETURN v
+            """, cve_id=cve_id, severity_score=severity_score, 
+                 exploitable=exploitable, patched=patched, notes=notes)
             
             record = result.single()
             if record:
-                return dict(record["u"])
+                return dict(record["v"])
             return {}
     
-    def create_port(self, host_name: str, port_number: int, service: str = "Unknown") -> Dict:
+    def link_vulnerability_to_host(self, host_name: str, cve_id: str):
+        """Create HAS_VULNERABILITY relationship between Host and Vulnerability."""
+        with self.driver.session(database=self.database) as session:
+            session.run("""
+                MATCH (h:Host {name: $host_name})
+                MATCH (v:Vulnerability {cve_id: $cve_id})
+                MERGE (h)-[:HAS_VULNERABILITY]->(v)
+            """, host_name=host_name, cve_id=cve_id)
+    
+    def link_vulnerability_to_service(self, service_name: str, host_name: str, cve_id: str):
+        """Create HAS_VULNERABILITY relationship between Service and Vulnerability."""
+        with self.driver.session(database=self.database) as session:
+            session.run("""
+                MATCH (s:Service {name: $service_name, host: $host_name})
+                MATCH (v:Vulnerability {cve_id: $cve_id})
+                MERGE (s)-[:HAS_VULNERABILITY]->(v)
+            """, service_name=service_name, host_name=host_name, cve_id=cve_id)
+    
+    def create_port(self, host_name: str, port_number: int, protocol: str = "TCP") -> Dict:
         """
         Create or update a Port node and link it to a Host via HAS_PORT.
         
         Args:
             host_name: Name of the host that has this port
             port_number: Port number
-            service: Service running on the port
+            protocol: Protocol (TCP/UDP)
             
         Returns:
             Dictionary containing the created/updated port node
@@ -147,17 +139,111 @@ class Neo4jConnector:
             result = session.run("""
                 MATCH (h:Host {name: $host_name})
                 MERGE (p:Port {number: $port_number, host: $host_name})
-                SET p.service = $service
+                SET p.protocol = $protocol
                 MERGE (h)-[:HAS_PORT]->(p)
                 RETURN p
-            """, host_name=host_name, port_number=port_number, service=service)
+            """, host_name=host_name, port_number=port_number, protocol=protocol)
             
             record = result.single()
             if record:
                 return dict(record["p"])
             return {}
     
-    def create_nic(self, host_name: str, mac: str = "Unknown", ip: str = "Unknown", connects_to: List[str] = None) -> Dict:
+    def create_service(self, host_name: str, service_name: str, version: str = "", 
+                      notes: str = "", port_number: Optional[int] = None) -> Dict:
+        """
+        Create or update a Service node.
+        
+        Args:
+            host_name: Name of the host
+            service_name: Service name
+            version: Service version
+            notes: Service notes
+            port_number: Optional port number (if service runs on a port)
+            
+        Returns:
+            Dictionary containing the created/updated service node
+        """
+        with self.driver.session(database=self.database) as session:
+            result = session.run("""
+                MATCH (h:Host {name: $host_name})
+                MERGE (s:Service {name: $service_name, host: $host_name})
+                SET s.version = $version, s.notes = $notes
+                RETURN s
+            """, host_name=host_name, service_name=service_name, 
+                 version=version, notes=notes)
+            
+            # Create relationship: Host -> Service or Port -> Service
+            if port_number is not None:
+                session.run("""
+                    MATCH (p:Port {number: $port_number, host: $host_name})
+                    MATCH (s:Service {name: $service_name, host: $host_name})
+                    MERGE (p)-[:RUNS_SERVICE]->(s)
+                """, port_number=port_number, host_name=host_name, service_name=service_name)
+            else:
+                session.run("""
+                    MATCH (h:Host {name: $host_name})
+                    MATCH (s:Service {name: $service_name, host: $host_name})
+                    MERGE (h)-[:RUNS_SERVICE]->(s)
+                """, host_name=host_name, service_name=service_name)
+            
+            record = result.single()
+            if record:
+                return dict(record["s"])
+            return {}
+    
+    def create_user(self, username: str, source: str, permission_level: str = "Unknown") -> Dict:
+        """
+        Create or update a User node.
+        
+        Args:
+            username: Username
+            source: Source (hostname or service name)
+            permission_level: User's permission level
+            
+        Returns:
+            Dictionary containing the created/updated user node
+        """
+        with self.driver.session(database=self.database) as session:
+            result = session.run("""
+                MERGE (u:User {username: $username, source: $source})
+                SET u.permission_level = $permission_level
+                RETURN u
+            """, username=username, source=source, permission_level=permission_level)
+            
+            record = result.single()
+            if record:
+                return dict(record["u"])
+            return {}
+    
+    def link_user_to_host(self, username: str, source: str, host_name: str):
+        """Create HAS_USER relationship between Host and User."""
+        with self.driver.session(database=self.database) as session:
+            session.run("""
+                MATCH (h:Host {name: $host_name})
+                MATCH (u:User {username: $username, source: $source})
+                MERGE (h)-[:HAS_USER]->(u)
+            """, host_name=host_name, username=username, source=source)
+    
+    def link_user_to_service(self, username: str, source: str, service_name: str, host_name: str):
+        """Create HAS_USER relationship between Service and User."""
+        with self.driver.session(database=self.database) as session:
+            session.run("""
+                MATCH (s:Service {name: $service_name, host: $host_name})
+                MATCH (u:User {username: $username, source: $source})
+                MERGE (s)-[:HAS_USER]->(u)
+            """, service_name=service_name, host_name=host_name, username=username, source=source)
+    
+    def link_user_access_to_service(self, username: str, source: str, service_name: str, host_name: str):
+        """Create HAS_ACCESS relationship between User and Service."""
+        with self.driver.session(database=self.database) as session:
+            session.run("""
+                MATCH (u:User {username: $username, source: $source})
+                MATCH (s:Service {name: $service_name, host: $host_name})
+                MERGE (u)-[:HAS_ACCESS]->(s)
+            """, username=username, source=source, service_name=service_name, host_name=host_name)
+    
+    def create_nic(self, host_name: str, mac: str = "Unknown", ip: str = "Unknown") -> Dict:
         """
         Create or update a NIC (Network Interface Card) node and link it to a Host via HAS_NIC.
         
@@ -165,22 +251,17 @@ class Neo4jConnector:
             host_name: Name of the host that has this NIC
             mac: MAC address
             ip: IP address
-            connects_to: List of IP addresses this NIC connects to
             
         Returns:
             Dictionary containing the created/updated NIC node
         """
-        if connects_to is None:
-            connects_to = []
-        
         with self.driver.session(database=self.database) as session:
             result = session.run("""
                 MATCH (h:Host {name: $host_name})
                 MERGE (n:NIC {mac: $mac, ip: $ip, host: $host_name})
-                SET n.connects_to = $connects_to
                 MERGE (h)-[:HAS_NIC]->(n)
                 RETURN n
-            """, host_name=host_name, mac=mac, ip=ip, connects_to=connects_to)
+            """, host_name=host_name, mac=mac, ip=ip)
             
             record = result.single()
             if record:
@@ -211,7 +292,7 @@ class Neo4jConnector:
     def import_parsed_data(self, parsed_data: Dict) -> Dict:
         """
         Import parsed data from LLM into Neo4j database.
-        Creates all hosts and their related nodes with proper HAS_* relationships.
+        Creates all hosts and their related nodes with proper relationships.
         
         Args:
             parsed_data: Dictionary containing hosts and their attributes from LLM parser
@@ -221,56 +302,140 @@ class Neo4jConnector:
         """
         stats = {
             "hosts": 0,
-            "applications": 0,
+            "vulnerabilities": 0,
+            "services": 0,
             "users": 0,
             "ports": 0,
             "nics": 0
         }
         
         for host_data in parsed_data.get("hosts", []):
-            # Create host node
             host_name = host_data.get("name", "Unknown")
+            
+            # Create host node
             self.create_host(
                 name=host_name,
                 os=host_data.get("os", "Unknown"),
-                cves=host_data.get("cves", [])
+                notes=host_data.get("notes", "")
             )
             stats["hosts"] += 1
             
-            # Create application nodes
-            for app in host_data.get("applications", []):
-                self.create_application(
-                    host_name=host_name,
-                    app_name=app.get("name", "Unknown"),
-                    cves=app.get("cves", [])
+            # Create host vulnerabilities
+            for vuln in host_data.get("vulnerabilities", []):
+                self.create_vulnerability(
+                    cve_id=vuln.get("cve_id", "Unknown"),
+                    severity_score=float(vuln.get("severity_score", 0.0)),
+                    exploitable=bool(vuln.get("exploitable", False)),
+                    patched=bool(vuln.get("patched", False)),
+                    notes=vuln.get("notes", "")
                 )
-                stats["applications"] += 1
+                self.link_vulnerability_to_host(host_name, vuln.get("cve_id", "Unknown"))
+                stats["vulnerabilities"] += 1
             
-            # Create user nodes
-            for user in host_data.get("users", []):
-                self.create_user(
-                    host_name=host_name,
-                    username=user.get("username", "Unknown"),
-                    permission_level=user.get("permission_level", "Unknown")
-                )
-                stats["users"] += 1
-            
-            # Create port nodes
-            for port in host_data.get("ports", []):
+            # Create ports and their services
+            for port_data in host_data.get("ports", []):
+                port_number = int(port_data.get("number", 0))
                 self.create_port(
                     host_name=host_name,
-                    port_number=port.get("number", 0),
-                    service=port.get("service", "Unknown")
+                    port_number=port_number,
+                    protocol=port_data.get("protocol", "TCP")
                 )
                 stats["ports"] += 1
+                
+                # Create services on this port
+                for svc_data in port_data.get("services", []):
+                    service_name = svc_data.get("name", "Unknown")
+                    self.create_service(
+                        host_name=host_name,
+                        service_name=service_name,
+                        version=svc_data.get("version", ""),
+                        notes=svc_data.get("notes", ""),
+                        port_number=port_number
+                    )
+                    stats["services"] += 1
+                    
+                    # Create service vulnerabilities
+                    for vuln in svc_data.get("vulnerabilities", []):
+                        self.create_vulnerability(
+                            cve_id=vuln.get("cve_id", "Unknown"),
+                            severity_score=float(vuln.get("severity_score", 0.0)),
+                            exploitable=bool(vuln.get("exploitable", False)),
+                            patched=bool(vuln.get("patched", False)),
+                            notes=vuln.get("notes", "")
+                        )
+                        self.link_vulnerability_to_service(service_name, host_name, vuln.get("cve_id", "Unknown"))
+                        stats["vulnerabilities"] += 1
+                    
+                    # Create service users
+                    for user_data in svc_data.get("users", []):
+                        username = user_data.get("username", "Unknown")
+                        source = user_data.get("source", service_name)
+                        self.create_user(
+                            username=username,
+                            source=source,
+                            permission_level=user_data.get("permission_level", "Unknown")
+                        )
+                        self.link_user_to_service(username, source, service_name, host_name)
+                        stats["users"] += 1
+            
+            # Create direct host services
+            for svc_data in host_data.get("services", []):
+                service_name = svc_data.get("name", "Unknown")
+                self.create_service(
+                    host_name=host_name,
+                    service_name=service_name,
+                    version=svc_data.get("version", ""),
+                    notes=svc_data.get("notes", ""),
+                    port_number=None  # Direct host service
+                )
+                stats["services"] += 1
+                
+                # Create service vulnerabilities
+                for vuln in svc_data.get("vulnerabilities", []):
+                    self.create_vulnerability(
+                        cve_id=vuln.get("cve_id", "Unknown"),
+                        severity_score=float(vuln.get("severity_score", 0.0)),
+                        exploitable=bool(vuln.get("exploitable", False)),
+                        patched=bool(vuln.get("patched", False)),
+                        notes=vuln.get("notes", "")
+                    )
+                    self.link_vulnerability_to_service(service_name, host_name, vuln.get("cve_id", "Unknown"))
+                    stats["vulnerabilities"] += 1
+                
+                # Create service users
+                for user_data in svc_data.get("users", []):
+                    username = user_data.get("username", "Unknown")
+                    source = user_data.get("source", service_name)
+                    self.create_user(
+                        username=username,
+                        source=source,
+                        permission_level=user_data.get("permission_level", "Unknown")
+                    )
+                    self.link_user_to_service(username, source, service_name, host_name)
+                    stats["users"] += 1
+            
+            # Create host users
+            for user_data in host_data.get("users", []):
+                username = user_data.get("username", "Unknown")
+                source = user_data.get("source", host_name)
+                self.create_user(
+                    username=username,
+                    source=source,
+                    permission_level=user_data.get("permission_level", "Unknown")
+                )
+                self.link_user_to_host(username, source, host_name)
+                stats["users"] += 1
+                
+                # Create HAS_ACCESS relationships
+                for service_name in user_data.get("has_access_to", []):
+                    self.link_user_access_to_service(username, source, service_name, host_name)
             
             # Create NIC nodes
             for nic in host_data.get("nics", []):
                 self.create_nic(
                     host_name=host_name,
                     mac=nic.get("mac", "Unknown"),
-                    ip=nic.get("ip", "Unknown"),
-                    connects_to=nic.get("connects_to", [])
+                    ip=nic.get("ip", "Unknown")
                 )
                 stats["nics"] += 1
         
@@ -284,41 +449,6 @@ class Neo4jConnector:
         
         return stats
     
-    def get_host(self, name: str) -> Optional[Dict]:
-        """
-        Retrieve a host and all its connected nodes.
-        
-        Args:
-            name: Host name
-            
-        Returns:
-            Dictionary containing host and all connected nodes, or None if not found
-        """
-        with self.driver.session(database=self.database) as session:
-            result = session.run("""
-                MATCH (h:Host {name: $name})
-                OPTIONAL MATCH (h)-[:HAS_APPLICATION]->(app)
-                OPTIONAL MATCH (h)-[:HAS_USER]->(user)
-                OPTIONAL MATCH (h)-[:HAS_PORT]->(port)
-                OPTIONAL MATCH (h)-[:HAS_NIC]->(nic)
-                RETURN h, 
-                       collect(DISTINCT app) as applications,
-                       collect(DISTINCT user) as users,
-                       collect(DISTINCT port) as ports,
-                       collect(DISTINCT nic) as nics
-            """, name=name)
-            
-            record = result.single()
-            if record and record["h"]:
-                return {
-                    "host": dict(record["h"]),
-                    "applications": [dict(a) for a in record["applications"] if a],
-                    "users": [dict(u) for u in record["users"] if u],
-                    "ports": [dict(p) for p in record["ports"] if p],
-                    "nics": [dict(n) for n in record["nics"] if n]
-                }
-            return None
-    
     def list_all_hosts(self) -> List[str]:
         """
         Get a list of all host names in the database.
@@ -329,29 +459,6 @@ class Neo4jConnector:
         with self.driver.session(database=self.database) as session:
             result = session.run("MATCH (h:Host) RETURN h.name as name ORDER BY name")
             return [record["name"] for record in result]
-    
-    def delete_host(self, name: str, cascade: bool = True):
-        """
-        Delete a host from the database.
-        
-        Args:
-            name: Host name to delete
-            cascade: If True, also delete all connected nodes (default: True)
-        """
-        with self.driver.session(database=self.database) as session:
-            if cascade:
-                # Delete host and all connected nodes
-                session.run("""
-                    MATCH (h:Host {name: $name})
-                    DETACH DELETE h
-                """, name=name)
-            else:
-                # Only delete host, leave orphaned nodes
-                session.run("""
-                    MATCH (h:Host {name: $name})
-                    DELETE h
-                """, name=name)
-            print(f"Host '{name}' deleted (cascade={cascade}).")
 
 
 def load_env_config() -> Dict:

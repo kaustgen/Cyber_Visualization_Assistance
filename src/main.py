@@ -39,28 +39,58 @@ def main():
         print(f"Host #{i}: {host['name']}")
         print(f"{'=' * 60}")
         print(f"  OS: {host['os']}")
-        print(f"  CVEs: {', '.join(host['cves']) if host['cves'] else 'None'}")
+        if host.get('notes'):
+            print(f"  Notes: {host['notes']}")
         
-        if host['applications']:
-            print(f"\n  Applications ({len(host['applications'])}):")
-            for app in host['applications']:
-                cves = ', '.join(app['cves']) if app['cves'] else 'None'
-                print(f"    - {app['name']} | CVEs: {cves}")
+        if host['vulnerabilities']:
+            print(f"\n  Host Vulnerabilities ({len(host['vulnerabilities'])}):")
+            for vuln in host['vulnerabilities']:
+                exploit_status = "✓ Exploitable" if vuln['exploitable'] else "✗ Not Exploitable"
+                patch_status = "✓ Patched" if vuln['patched'] else "✗ Unpatched"
+                print(f"    - {vuln['cve_id']} | Score: {vuln['severity_score']} | {exploit_status} | {patch_status}")
+                if vuln.get('notes'):
+                    print(f"      Notes: {vuln['notes']}")
+        
+        if host['ports']:
+            print(f"\n  Open Ports ({len(host['ports'])}):")
+            for port in host['ports']:
+                print(f"    - Port {port['number']}/{port['protocol']}")
+                for svc in port.get('services', []):
+                    version_str = f" {svc['version']}" if svc['version'] else ""
+                    print(f"      └─ Service: {svc['name']}{version_str}")
+                    if svc.get('notes'):
+                        print(f"         Notes: {svc['notes']}")
+                    if svc.get('vulnerabilities'):
+                        for vuln in svc['vulnerabilities']:
+                            print(f"         └─ {vuln['cve_id']} (Score: {vuln['severity_score']})")
+                    if svc.get('users'):
+                        for user in svc['users']:
+                            print(f"         └─ User: {user['username']} ({user['permission_level']})")
+        
+        if host['services']:
+            print(f"\n  Direct Services ({len(host['services'])}):")
+            for svc in host['services']:
+                version_str = f" {svc['version']}" if svc['version'] else ""
+                print(f"    - {svc['name']}{version_str}")
+                if svc.get('notes'):
+                    print(f"      Notes: {svc['notes']}")
+                if svc.get('users'):
+                    for user in svc['users']:
+                        print(f"      └─ User: {user['username']} ({user['permission_level']})")
         
         if host['users']:
             print(f"\n  Users ({len(host['users'])}):")
             for user in host['users']:
                 print(f"    - {user['username']} ({user['permission_level']})")
-        
-        if host['ports']:
-            print(f"\n  Ports ({len(host['ports'])}):")
-            for port in host['ports']:
-                print(f"    - {port['number']}/{port['service']}")
+                if user.get('has_access_to'):
+                    print(f"      Has Access: {', '.join(user['has_access_to'])}")
         
         if host['nics']:
             print(f"\n  Network Interfaces ({len(host['nics'])}):")
             for nic in host['nics']:
                 print(f"    - IP: {nic['ip']} | MAC: {nic['mac']}")
+                if nic.get('connects_to'):
+                    print(f"      Connects To: {', '.join(nic['connects_to'])}")
                 print(f"      Connects to: {', '.join(nic['connects_to']) if nic['connects_to'] else 'None'}")
     
     print(f"\n{'=' * 60}")
@@ -75,9 +105,10 @@ def main():
         with create_connector_from_env() as neo4j:
             stats = neo4j.import_parsed_data(result)
             
-            print(f"\n✓ Successfully imported to Neo4j:")
+            print(f"\nSuccessfully imported to Neo4j:")
             print(f"  - {stats['hosts']} Host(s)")
-            print(f"  - {stats['applications']} Application(s)")
+            print(f"  - {stats['vulnerabilities']} Vulnerability/Vulnerabilities")
+            print(f"  - {stats['services']} Service(s)")
             print(f"  - {stats['users']} User(s)")
             print(f"  - {stats['ports']} Port(s)")
             print(f"  - {stats['nics']} NIC(s)")
