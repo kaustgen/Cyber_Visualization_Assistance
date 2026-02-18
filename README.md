@@ -40,7 +40,7 @@ You can see some examples in ./template.md and in the /examples directory. Our L
 The single most powerful thing about using Neo4J is we can run queries on complex networks, which may illuminate attack vectors we haven't previously seen before. Some example queries can be seen in Neo4J_Cypher_Examples, and if you don't use cypher then almost all of modern AI systems can write one for you if you give it the hierarchy I show below
 
 If you prefer to read Cypher, then you can see our full node types and relationships here:
-**Node Hierarchy:**
+- **Node Hierarchy:**
 ```cypher
 (Host {name: string, os: string, notes: string})
   -[:HAS_VULNERABILITY]-> (Vulnerability {cve_id: string, severity_score: float, exploitable: bool, patched: bool, notes: string})
