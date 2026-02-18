@@ -110,6 +110,39 @@ class LLMParser:
         self.model = model or os.getenv("LLM_MODEL", "llama3")
         self.ollama_url = ollama_url or os.getenv("LLM_OLLAMA_URL", "http://localhost:11434")
     
+    def test_connection(self) -> tuple[bool, str]:
+        """
+        Test Ollama connection and model availability.
+        
+        Returns:
+            (success: bool, message: str)
+        """
+        try:
+            # Test basic connectivity
+            response = requests.get(f"{self.ollama_url}/api/tags", timeout=5)
+            response.raise_for_status()
+            
+            # Check if model is available
+            models = response.json().get("models", [])
+            model_names = [m.get("name", "") for m in models]
+            
+            if not any(self.model in name for name in model_names):
+                return False, f"Model '{self.model}' not found. Available models: {', '.join(model_names)}\\nInstall with: ollama pull {self.model}"
+            
+            return True, f"Ollama connection successful. Model '{self.model}' is available."
+            
+        except requests.exceptions.ConnectionError:
+            return False, f"Cannot connect to Ollama at {self.ollama_url}. Is Ollama running?\\nStart with: ollama serve"
+        except requests.exceptions.Timeout:
+            return False, f"Connection to Ollama at {self.ollama_url} timed out. Check if the service is responsive."
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                return False, f"Ollama authentication failed. Check your credentials."
+            else:
+                return False, f"Ollama HTTP error: {e}"
+        except Exception as e:
+            return False, f"Ollama connection error: {e}"
+    
     def parse_markdown_file(self, file_path: str) -> Dict:
         """
         Parse a markdown file and extract Neo4j node structure.

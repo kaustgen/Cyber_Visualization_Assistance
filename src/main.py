@@ -4,7 +4,7 @@
 
 import sys
 from pathlib import Path
-from llm_parser import parse_file
+from llm_parser import parse_file, LLMParser
 from neo4j_connector import create_connector_from_env
 
 def main():
@@ -25,7 +25,40 @@ def main():
         print(f"Error: File not found: {markdown_file}")
         sys.exit(1)
     
-    print(f"Parsing markdown file: {markdown_file}")
+    # Pre-flight service checks
+    print("Checking service availability...")
+    print("=" * 60)
+    
+    # Check Ollama connection
+    parser = LLMParser()
+    ollama_ok, ollama_msg = parser.test_connection()
+    print(f"Ollama: {ollama_msg}")
+    
+    if not ollama_ok:
+        print("\nCannot proceed without Ollama connection.")
+        print("Please fix the issue above and try again.")
+        sys.exit(1)
+    
+    # Check Neo4j connection
+    try:
+        neo4j = create_connector_from_env()
+        neo4j_ok, neo4j_msg = neo4j.test_connection()
+        print(f"Neo4j: {neo4j_msg}")
+        
+        if not neo4j_ok:
+            print("\nCannot proceed without Neo4j connection.")
+            print("Please fix the issue above and try again.")
+            neo4j.close()
+            sys.exit(1)
+        
+        neo4j.close()
+    except Exception as e:
+        print(f"Neo4j: Failed to initialize: {e}")
+        print("\nCheck your .env file configuration.")
+        sys.exit(1)
+    
+    print("\nAll services available. Starting parse...")
+    print(f"\nParsing markdown file: {markdown_file}")
     print("=" * 60)
     
     # Parse the markdown file using local LLM

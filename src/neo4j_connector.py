@@ -32,6 +32,30 @@ class Neo4jConnector:
         if self.driver:
             self.driver.close()
     
+    def test_connection(self) -> tuple[bool, str]:
+        """
+        Test Neo4j connection and authentication.
+        
+        Returns:
+            (success: bool, message: str)
+        """
+        try:
+            with self.driver.session(database=self.database) as session:
+                result = session.run("RETURN 1 as test")
+                result.single()
+                return True, "Neo4j connection successful"
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            if "authentication" in error_msg or "unauthorized" in error_msg:
+                return False, f"Neo4j authentication failed. Check NEO4J_USERNAME and NEO4J_PASSWORD in .env file.\nError: {e}"
+            elif "connection refused" in error_msg or "unable to connect" in error_msg:
+                return False, f"Cannot connect to Neo4j at {self.driver._pool.address}. Is Neo4j running?\nError: {e}"
+            elif "database" in error_msg:
+                return False, f"Database '{self.database}' not found. Check NEO4J_DATABASE in .env file.\nError: {e}"
+            else:
+                return False, f"Neo4j connection error: {e}"
+    
     def __enter__(self):
         """Context manager entry."""
         return self
