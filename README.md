@@ -21,15 +21,18 @@ For the notes to be parsed correctly we require that they follow two standard fo
     - The LLM parses attribute and relationships stemming from a node through an indentation heirarchy, so for ex:
         ```markdown
         # Host: web-server
+        - IP: 127.0.0.1
         ## Vulnerabilities
         - CVE-2025-1111 - Score: 7.8, Exploitable: true
         ## Open Ports
         - Port 80
             - Service: Apache 2.4
                 - Vulnerabilities
-                    - CVE-2024-5412```
-    - In the above example the (CVE-2025-1111) would be an attribute in a Vulnerability node belonging to web-server, while CVE-2024-5412 vulnerability node would belong to the Service Node (Apache) which relates to the port node 80
+                    - CVE-2024-5412
+        ```
+    - In the above example the (CVE-2025-1111) would be an attribute in a Vulnerability node belonging to web-server, while CVE-2024-5412 vulnerability node would belong to the Service Node (Apache) which relates to the port node 80. A NIC node with IP 127.0.0.1 would also be created belonging to web-server
     - In this way we can create complex relationship with basic heirarchy
+    ![Neo4J Output](examples/images/image.png)
 
 You can see some examples in ./template.md and in the /examples directory. Our LLM and Neo4J instance can currently handle the creation of 6 different nodes and 6 different relationships.  
 
