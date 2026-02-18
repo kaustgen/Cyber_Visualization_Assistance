@@ -31,10 +31,13 @@ For the notes to be parsed correctly we require that they follow two standard fo
                     - CVE-2024-5412
         ```
     - In the above example the (CVE-2025-1111) would be an attribute in a Vulnerability node belonging to web-server, while CVE-2024-5412 vulnerability node would belong to the Service Node (Apache) which relates to the port node 80. A NIC node with IP 127.0.0.1 would also be created belonging to web-server
-    - In this way we can create complex relationship with basic heirarchy
+    - In this way we can create complex and most importantly QUERIABLE network maps through just our markdown notes!
     ![Neo4J Output](examples/images/image.png)
 
 You can see some examples in ./template.md and in the /examples directory. Our LLM and Neo4J instance can currently handle the creation of 6 different nodes and 6 different relationships.  
+
+## Queries
+The single most powerful thing about using Neo4J is we can run queries on complex networks, which may illuminate attack vectors we haven't previously seen before. Some example queries can be seen in Neo4J_Cypher_Examples, and if you don't use cypher then almost all of modern AI systems can write one for you if you give it the hierarchy I show below
 
 If you prefer to read Cypher, then you can see our full node types and relationships here:
 **Node Hierarchy:**
